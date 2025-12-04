@@ -353,11 +353,18 @@ fn decode_detect_invalid_last_symbol<E: EngineWrapper>(engine_wrapper: E) {
             let mut encoded = "AAAA".repeat(prefix_quads);
             encoded.push_str(suffix);
 
+            let symbol = suffix.as_bytes()[offset];
             assert_eq!(
-                Err(DecodeError::InvalidLastSymbol(
-                    encoded.len() - 4 + offset,
-                    suffix.as_bytes()[offset],
-                )),
+                Err(DecodeError::InvalidLastSymbol {
+                    offset: encoded.len() - 4 + offset,
+                    symbol,
+                    symbol_value: STANDARD
+                        .as_str()
+                        .as_bytes()
+                        .iter()
+                        .position(|b| *b == symbol)
+                        .unwrap() as u8
+                }),
                 engine.decode(encoded.as_str())
             );
         }
@@ -456,7 +463,16 @@ fn decode_detect_invalid_last_symbol_every_possible_two_symbols<E: EngineWrapper
                         assert_eq!(Ok(bytes.clone()), res);
                     }
                     None => assert_eq!(
-                        Err(DecodeError::InvalidLastSymbol(1, s2)),
+                        Err(DecodeError::InvalidLastSymbol {
+                            offset: 1,
+                            symbol: s2,
+                            symbol_value: STANDARD
+                                .as_str()
+                                .as_bytes()
+                                .iter()
+                                .position(|b| *b == s2)
+                                .unwrap() as u8
+                        }),
                         engine.decode(&symbols[..])
                     ),
                 }
@@ -523,7 +539,16 @@ fn decode_detect_invalid_last_symbol_every_possible_three_symbols<E: EngineWrapp
                             assert_eq!(Ok(bytes.clone()), res);
                         }
                         None => assert_eq!(
-                            Err(DecodeError::InvalidLastSymbol(2, s3)),
+                            Err(DecodeError::InvalidLastSymbol {
+                                offset: 2,
+                                symbol: s3,
+                                symbol_value: STANDARD
+                                    .as_str()
+                                    .as_bytes()
+                                    .iter()
+                                    .position(|b| *b == s3)
+                                    .unwrap() as u8
+                            }),
                             engine.decode(&symbols[..])
                         ),
                     }
@@ -532,6 +557,23 @@ fn decode_detect_invalid_last_symbol_every_possible_three_symbols<E: EngineWrapp
         }
         prefix.extend_from_slice(b"AAAA");
     }
+}
+
+/// <https://github.com/marshallpierce/rust-base64/issues/291>
+#[apply(all_engines)]
+fn detects_users_real_world_invalid_suffix<E: EngineWrapper>(engine_wrapper: E) {
+    let b64 = "z3Uuv7+Xsn+acg0ZNRsw1/ZEl1FJEMw3kV0N0MaAZuEqXsMjfR2AE51PUsgwNEY4c+PdL3UxO/kcDInOe4+MiyeJL2mAapHLXk+7PBQ6hdqt5Oy4rwOIW4TvRzGHAW==";
+
+    let engine = E::standard();
+
+    assert_eq!(
+        DecodeError::InvalidLastSymbol {
+            offset: 125,
+            symbol: b'W',
+            symbol_value: 0x16,
+        },
+        engine.decode(b64).unwrap_err()
+    );
 }
 
 #[apply(all_engines)]
@@ -828,7 +870,11 @@ fn decode_malleability_test_case_3_byte_suffix_invalid_trailing_symbol<E: Engine
     engine_wrapper: E,
 ) {
     assert_eq!(
-        DecodeError::InvalidLastSymbol(6, 0x39),
+        DecodeError::InvalidLastSymbol {
+            offset: 6,
+            symbol: 0x39,
+            symbol_value: 0x3d
+        },
         E::standard().decode("SGVsbG9=").unwrap_err()
     );
 }

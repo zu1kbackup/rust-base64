@@ -6,7 +6,7 @@ use core::fmt;
 use std::error;
 
 /// Errors that can occur while decoding.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum DecodeError {
     /// An invalid byte was found in the input. The offset and offending byte are provided.
     ///
@@ -23,7 +23,21 @@ pub enum DecodeError {
     /// This is indicative of corrupted or truncated Base64.
     /// Unlike [`DecodeError::InvalidByte`], which reports symbols that aren't in the alphabet,
     /// this error is for symbols that are in the alphabet but represent nonsensical encodings.
-    InvalidLastSymbol(usize, u8),
+    ///
+    /// See [`crate::engine::GeneralPurposeConfig::with_decode_allow_trailing_bits`] to control
+    /// whether to detect this encoding error and produce this variant.
+    InvalidLastSymbol {
+        /// Offset in the input
+        offset: usize,
+        /// The offending symbol
+        symbol: u8,
+        /// The bits the symbol corresponds to.
+        ///
+        /// Since this error is being reported, this value has high bits erroneously set.
+        /// For a 2-symbol suffix, only the first 2 bits may be set (6 + 2 = 8 bits,
+        /// 1 byte), and for a 3 symbol, only the first 4 (6 + 6 + 4 = 16, 2 bytes).
+        symbol_value: u8,
+    },
     /// The nature of the padding was not as configured: absent or incorrect when it must be
     /// canonical, or present when it must be absent, etc.
     InvalidPadding,
@@ -36,11 +50,36 @@ impl fmt::Display for DecodeError {
                 write!(f, "Invalid symbol {}, offset {}.", byte, index)
             }
             Self::InvalidLength(len) => write!(f, "Invalid input length: {}", len),
-            Self::InvalidLastSymbol(index, byte) => {
-                write!(f, "Invalid last symbol {}, offset {}.", byte, index)
+            Self::InvalidLastSymbol {
+                offset,
+                symbol,
+                symbol_value,
+            } => {
+                write!(
+                    f,
+                    "Invalid last symbol {:#4x} ('{}') at offset {}, decoded as {:#010b}.",
+                    symbol,
+                    // To have been decoded at all, it must have been ascii, but rather than have a
+                    // panicking code path, replacement char seems reasonable.
+                    // Can't use `char::from_u32` as that's 1.52+, so we make a 1-byte str.
+                    core::str::from_utf8(&[symbol])
+                        .ok()
+                        .and_then(|s| s.chars().next())
+                        // associated const is also 1.52+
+                        .unwrap_or(core::char::REPLACEMENT_CHARACTER),
+                    offset,
+                    symbol_value
+                )
             }
             Self::InvalidPadding => write!(f, "Invalid padding"),
         }
+    }
+}
+
+impl fmt::Debug for DecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // 1.48.0 can't handle {self}
+        write!(f, "{}", self)
     }
 }
 
@@ -284,6 +323,20 @@ mod tests {
         }
     }
 
+    #[test]
+    fn invalid_last_symbol_debug() {
+        let err = DecodeError::InvalidLastSymbol {
+            offset: 100,
+            symbol: b'W',
+            symbol_value: 0x16,
+        };
+
+        assert_eq!(
+            "Invalid last symbol 0x57 ('W') at offset 100, decoded as 0b00010110.",
+            format!("{:?}", err)
+        );
+    }
+
     fn do_decode_slice_doesnt_clobber_existing_prefix_or_suffix<
         F: Fn(&GeneralPurpose, &[u8], &mut [u8]) -> usize,
     >(
@@ -355,7 +408,11 @@ mod coverage_gaming {
             "{} {} {} {}",
             DecodeError::InvalidByte(0, 0),
             DecodeError::InvalidLength(0),
-            DecodeError::InvalidLastSymbol(0, 0),
+            DecodeError::InvalidLastSymbol {
+                offset: 0,
+                symbol: 0,
+                symbol_value: 0,
+            },
             DecodeError::InvalidPadding,
         );
     }
