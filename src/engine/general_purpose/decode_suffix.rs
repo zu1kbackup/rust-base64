@@ -26,6 +26,7 @@ pub(crate) fn decode_suffix(
     // offset from input_index
     let mut first_padding_offset: usize = 0;
     let mut last_symbol = 0_u8;
+    let mut last_symbol_value = 0_u8;
     let mut morsels = [0_u8; 4];
 
     for (leftover_index, &b) in input[input_index..].iter().enumerate() {
@@ -77,6 +78,7 @@ pub(crate) fn decode_suffix(
         // can use up to 8 * 6 = 48 bits of the u64, if last chunk has no padding.
         // Pack the leftovers from left to right.
         let morsel = decode_table[b as usize];
+        last_symbol_value = morsel;
         if morsel == INVALID_VALUE {
             return Err(DecodeError::InvalidByte(input_index + leftover_index, b).into());
         }
@@ -133,10 +135,11 @@ pub(crate) fn decode_suffix(
     let mask = !0_u32 >> (leftover_bytes_to_append * 8);
     if !decode_allow_trailing_bits && (leftover_num & mask) != 0 {
         // last morsel is at `morsels_in_leftover` - 1
-        return Err(DecodeError::InvalidLastSymbol(
-            input_index + morsels_in_leftover - 1,
-            last_symbol,
-        )
+        return Err(DecodeError::InvalidLastSymbol {
+            offset: input_index + morsels_in_leftover - 1,
+            symbol: last_symbol,
+            symbol_value: last_symbol_value,
+        }
         .into());
     }
 

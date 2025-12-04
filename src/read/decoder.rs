@@ -170,9 +170,15 @@ impl<'e, E: Engine, R: io::Read> DecoderReader<'e, E, R> {
                         DecodeError::InvalidLength(len) => {
                             DecodeError::InvalidLength(self.input_consumed_len + len)
                         }
-                        DecodeError::InvalidLastSymbol(offset, byte) => {
-                            DecodeError::InvalidLastSymbol(self.input_consumed_len + offset, byte)
-                        }
+                        DecodeError::InvalidLastSymbol {
+                            offset,
+                            symbol,
+                            symbol_value,
+                        } => DecodeError::InvalidLastSymbol {
+                            offset: self.input_consumed_len + offset,
+                            symbol,
+                            symbol_value,
+                        },
                         DecodeError::InvalidPadding => DecodeError::InvalidPadding,
                     }
                 }

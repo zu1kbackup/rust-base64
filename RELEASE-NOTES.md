@@ -1,6 +1,7 @@
 # Next
 
 - Added more consts for preconfigured configs and engines
+- Make DecodeError::InvalidLastSymbol more clear by including the decoded value
 
 # 0.22.1
 
